@@ -1,0 +1,61 @@
+{
+  "notes": "Benchmark queries. `expects` records what a correct optimizer should do, so the harness can report not just 'did it get faster' but 'did it find the thing that was actually wrong'. `control` queries are already well formed: the correct outcome for them is that nothing is accepted, which is what measures false positives.",
+  "queries": [
+    {
+      "id": "q01-date-function",
+      "description": "The canonical case: a function around an indexed timestamp column defeats any index on it.",
+      "sql": "SELECT o.id, o.total_cents, u.email FROM orders o JOIN users u ON o.user_id = u.id WHERE DATE(o.created_at) = '2026-06-01' AND u.country = 'IN'",
+      "expects": { "finding": "non-sargable-predicate", "rewrite": true, "index": true }
+    },
+    {
+      "id": "q02-cast-on-column",
+      "description": "Same defect wearing a different hat: a cast rather than a function call.",
+      "sql": "SELECT id, total_cents FROM orders WHERE created_at::date = '2026-06-01'",
+      "expects": { "finding": "non-sargable-predicate", "rewrite": false, "index": true }
+    },
+    {
+      "id": "q03-leading-wildcard",
+      "description": "A pattern beginning with % has no usable prefix for a B-tree.",
+      "sql": "SELECT id, email FROM users WHERE email LIKE '%@corp.test'",
+      "expects": { "finding": "leading-wildcard-like", "rewrite": false, "index": false }
+    },
+    {
+      "id": "q04-unindexed-join",
+      "description": "A join on a foreign key with no index on the child side.",
+      "sql": "SELECT o.id, o.total_cents FROM orders o JOIN users u ON o.user_id = u.id WHERE u.email = 'user42@example.com'",
+      "expects": { "finding": "missing-index", "rewrite": false, "index": true }
+    },
+    {
+      "id": "q05-not-in-subquery",
+      "description": "NOT IN against a subquery: a NULL trap, and usually a worse plan than NOT EXISTS.",
+      "sql": "SELECT u.id, u.email FROM users u WHERE u.id NOT IN (SELECT o.user_id FROM orders o WHERE o.status = 'refunded')",
+      "expects": { "finding": "not-in-subquery", "rewrite": false, "index": false }
+    },
+    {
+      "id": "q06-unindexed-filter",
+      "description": "A selective filter on a column with no index at all.",
+      "sql": "SELECT id, user_id, total_cents FROM orders WHERE total_cents > 499000",
+      "expects": { "finding": "missing-index", "rewrite": false, "index": true }
+    },
+    {
+      "id": "q07-aggregate-scan",
+      "description": "An aggregate over a date range, filtered on an unindexed column.",
+      "sql": "SELECT o.status, count(*) AS n, sum(o.total_cents) AS cents FROM orders o WHERE o.created_at >= now() - INTERVAL '30 days' GROUP BY o.status ORDER BY o.status",
+      "expects": { "finding": "missing-index", "rewrite": false, "index": true }
+    },
+    {
+      "id": "q08-control-indexed-lookup",
+      "control": true,
+      "description": "A primary key lookup. Already optimal; nothing should be accepted.",
+      "sql": "SELECT id, email, country FROM users WHERE id = 12345",
+      "expects": { "finding": "", "rewrite": false, "index": false }
+    },
+    {
+      "id": "q09-control-small-table",
+      "control": true,
+      "description": "A full scan of a ten-row table. The correct plan is a sequential scan; recommending an index here would be a false positive.",
+      "sql": "SELECT code, name FROM countries ORDER BY code",
+      "expects": { "finding": "", "rewrite": false, "index": false }
+    }
+  ]
+}

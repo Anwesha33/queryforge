@@ -1,0 +1,215 @@
+{
+  "model": "gemini-3.5-flash-lite",
+  "llm_enabled": true,
+  "ran_at": "2026-09-19T04:04:05.740982+05:30",
+  "results": [
+    {
+      "id": "q01-date-function",
+      "control": false,
+      "baseline_ms": 52.547,
+      "best_ms": 27.013,
+      "improvement_pct": 48.592688450339686,
+      "speedup": 1.9452485840151037,
+      "expected_finding": "non-sargable-predicate",
+      "found_expected_finding": true,
+      "finding_codes": [
+        "non-sargable-predicate",
+        "missing-index",
+        "missing-index",
+        "missing-index",
+        "seq-scan-large-table",
+        "seq-scan-large-table"
+      ],
+      "candidates_tested": 2,
+      "candidates_accepted": 2,
+      "indexes_tested": 3,
+      "indexes_recommended": 0,
+      "best_index_gain_pct": 0,
+      "accepted_sql": "SELECT o.id, o.total_cents, u.email FROM orders o JOIN users u ON o.user_id = u.id WHERE o.created_at \u003e= '2026-06-01 00:00:00' AND o.created_at \u003c '2026-06-02 00:00:00' AND u.country = 'IN'",
+      "duration_ms": 4140
+    },
+    {
+      "id": "q02-cast-on-column",
+      "control": false,
+      "baseline_ms": 30.22,
+      "best_ms": 19.328,
+      "improvement_pct": 36.04235605559232,
+      "speedup": 1.5635347682119205,
+      "expected_finding": "non-sargable-predicate",
+      "found_expected_finding": true,
+      "finding_codes": [
+        "non-sargable-predicate",
+        "missing-index",
+        "seq-scan-large-table"
+      ],
+      "candidates_tested": 1,
+      "candidates_accepted": 1,
+      "indexes_tested": 1,
+      "indexes_recommended": 0,
+      "best_index_gain_pct": 0,
+      "accepted_sql": "SELECT id, total_cents FROM orders WHERE created_at \u003e= '2026-06-01 00:00:00+00' AND created_at \u003c '2026-06-02 00:00:00+00'",
+      "duration_ms": 2825
+    },
+    {
+      "id": "q03-leading-wildcard",
+      "control": false,
+      "baseline_ms": 15.794,
+      "best_ms": 15.794,
+      "improvement_pct": 0,
+      "speedup": 0,
+      "expected_finding": "leading-wildcard-like",
+      "found_expected_finding": true,
+      "finding_codes": [
+        "leading-wildcard-like",
+        "seq-scan-large-table"
+      ],
+      "candidates_tested": 0,
+      "candidates_accepted": 0,
+      "indexes_tested": 0,
+      "indexes_recommended": 0,
+      "best_index_gain_pct": 0,
+      "duration_ms": 1477
+    },
+    {
+      "id": "q04-unindexed-join",
+      "control": false,
+      "baseline_ms": 6.192,
+      "best_ms": 6.192,
+      "improvement_pct": 0,
+      "speedup": 0,
+      "expected_finding": "missing-index",
+      "found_expected_finding": true,
+      "finding_codes": [
+        "missing-index",
+        "missing-index",
+        "seq-scan-large-table",
+        "seq-scan-large-table"
+      ],
+      "candidates_tested": 1,
+      "candidates_accepted": 0,
+      "rejection_reasons": {
+        "no_measurable_improvement": 1
+      },
+      "indexes_tested": 2,
+      "indexes_recommended": 1,
+      "best_index_gain_pct": 55.70090439276486,
+      "best_index_ddl": "CREATE INDEX idx_users_email ON users (email)",
+      "duration_ms": 1878
+    },
+    {
+      "id": "q05-not-in-subquery",
+      "control": false,
+      "baseline_ms": 104.127,
+      "best_ms": 68.112,
+      "improvement_pct": 34.58757094701663,
+      "speedup": 1.528761451726568,
+      "expected_finding": "not-in-subquery",
+      "found_expected_finding": true,
+      "finding_codes": [
+        "missing-index",
+        "seq-scan-large-table",
+        "seq-scan-large-table",
+        "not-in-subquery"
+      ],
+      "candidates_tested": 1,
+      "candidates_accepted": 1,
+      "indexes_tested": 1,
+      "indexes_recommended": 1,
+      "best_index_gain_pct": 13.516186963995889,
+      "best_index_ddl": "CREATE INDEX idx_orders_status ON orders (status)",
+      "accepted_sql": "SELECT u.id, u.email FROM users u WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id AND o.status = 'refunded')",
+      "duration_ms": 4333
+    },
+    {
+      "id": "q06-unindexed-filter",
+      "control": false,
+      "baseline_ms": 19.335,
+      "best_ms": 19.335,
+      "improvement_pct": 0,
+      "speedup": 0,
+      "expected_finding": "missing-index",
+      "found_expected_finding": true,
+      "finding_codes": [
+        "missing-index",
+        "seq-scan-large-table"
+      ],
+      "candidates_tested": 0,
+      "candidates_accepted": 0,
+      "indexes_tested": 1,
+      "indexes_recommended": 1,
+      "best_index_gain_pct": 98.51047323506594,
+      "best_index_ddl": "CREATE INDEX idx_orders_total_cents ON orders (total_cents)",
+      "duration_ms": 1420
+    },
+    {
+      "id": "q07-aggregate-scan",
+      "control": false,
+      "baseline_ms": 42.023,
+      "best_ms": 42.023,
+      "improvement_pct": 0,
+      "speedup": 0,
+      "expected_finding": "missing-index",
+      "found_expected_finding": true,
+      "finding_codes": [
+        "missing-index",
+        "seq-scan-large-table"
+      ],
+      "candidates_tested": 0,
+      "candidates_accepted": 0,
+      "indexes_tested": 1,
+      "indexes_recommended": 1,
+      "best_index_gain_pct": 83.5447255074602,
+      "best_index_ddl": "CREATE INDEX idx_orders_created_at ON orders (created_at)",
+      "duration_ms": 2640
+    },
+    {
+      "id": "q08-control-indexed-lookup",
+      "control": true,
+      "baseline_ms": 0.013,
+      "best_ms": 0.013,
+      "improvement_pct": 0,
+      "speedup": 0,
+      "found_expected_finding": true,
+      "finding_codes": null,
+      "candidates_tested": 0,
+      "candidates_accepted": 0,
+      "indexes_tested": 0,
+      "indexes_recommended": 0,
+      "best_index_gain_pct": 0,
+      "duration_ms": 1023
+    },
+    {
+      "id": "q09-control-small-table",
+      "control": true,
+      "baseline_ms": 0.029,
+      "best_ms": 0.029,
+      "improvement_pct": 0,
+      "speedup": 0,
+      "found_expected_finding": true,
+      "finding_codes": null,
+      "candidates_tested": 0,
+      "candidates_accepted": 0,
+      "indexes_tested": 0,
+      "indexes_recommended": 0,
+      "best_index_gain_pct": 0,
+      "duration_ms": 1099
+    }
+  ],
+  "totals": {
+    "queries": 9,
+    "failed": 0,
+    "expected_findings_found": "7/7",
+    "queries_with_a_verified_improvement": 3,
+    "median_speedup_on_improved": 1.5635347682119205,
+    "best_speedup": 1.9452485840151037,
+    "candidates_tested": 5,
+    "candidates_accepted": 4,
+    "rejection_reasons": {
+      "no_measurable_improvement": 1
+    },
+    "indexes_tested": 9,
+    "indexes_recommended": 4,
+    "control_false_positives": 0,
+    "total_ms_saved_per_execution": 72.441
+  }
+}
