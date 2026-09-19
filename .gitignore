@@ -1,0 +1,7 @@
+/bin/
+/api
+/worker
+/bench
+*.test
+.env
+.DS_Store
