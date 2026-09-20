@@ -3,6 +3,7 @@ package optimizer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -64,7 +65,10 @@ type Report struct {
 
 	Schema   *engine.Schema  `json:"schema,omitempty"`
 	Findings []rules.Finding `json:"findings"`
-	Baseline BaselineReport  `json:"baseline"`
+	// Limitations names analyses that did not run against this database, so an
+	// empty findings list is never mistaken for a clean bill of health.
+	Limitations []string       `json:"limitations,omitempty"`
+	Baseline    BaselineReport `json:"baseline"`
 
 	Candidates []Result          `json:"candidates"`
 	Indexes    []IndexExperiment `json:"index_experiments"`
@@ -98,6 +102,9 @@ type Optimizer struct {
 	LLM    *llm.Client
 	Opts   Options
 	Log    Logger
+	// Dialect selects the grammar used to parse incoming SQL. Empty means
+	// Postgres, which keeps existing callers unchanged.
+	Dialect sqlparse.Dialect
 }
 
 // Run executes every phase and returns a report.
@@ -107,7 +114,7 @@ type Optimizer struct {
 func (o *Optimizer) Run(ctx context.Context, sql string) (*Report, error) {
 	start := time.Now()
 
-	st, err := sqlparse.Parse(sql)
+	st, err := sqlparse.ParseDialect(sql, o.Dialect)
 	if err != nil {
 		return nil, err
 	}
@@ -144,6 +151,7 @@ func (o *Optimizer) Run(ctx context.Context, sql string) (*Report, error) {
 		"rows", base.Checksum.RowCount, "cost", base.Plan.TotalCost)
 
 	analysis := rules.Analyze(st, schema, base.Measured)
+	rep.Limitations = analysis.Limitations
 	rep.Findings = analysis.Findings
 	o.Log.Info("rules applied", "findings", len(analysis.Findings))
 
@@ -176,7 +184,7 @@ func (o *Optimizer) Run(ctx context.Context, sql string) (*Report, error) {
 
 	verifier := &Verifier{
 		Engine: o.Engine, MinImprovementPct: o.Opts.MinImprovementPct,
-		Runs: o.Opts.Runs, Log: o.Log,
+		Runs: o.Opts.Runs, Log: o.Log, Dialect: o.Dialect,
 	}
 
 	seen := map[string]bool{normalizeSQL(st.SQL): true}
@@ -226,6 +234,19 @@ func (o *Optimizer) runIndexExperiments(ctx context.Context, v *Verifier, base *
 		}
 		tested++
 		exp, err := v.MeasureIndex(ctx, base, f.SuggestedIndex, f.Table)
+		if errors.Is(err, engine.ErrNoHypotheticalIndexes) {
+			// Not a failure: this engine cannot build an index and throw it
+			// away, so the candidate is reported unmeasured and explicitly NOT
+			// recommended. Recommending an index this service has not timed
+			// would be the guess the whole project exists to avoid.
+			o.Log.Info("index candidate left unmeasured", "ddl", f.SuggestedIndex, "reason", "engine cannot measure hypothetical indexes")
+			out = append(out, IndexExperiment{
+				DDL: f.SuggestedIndex, Table: f.Table, Recommended: false,
+				Detail: "candidate identified but NOT measured: this engine cannot create and roll back an index, " +
+					"so there is no evidence it would help. Measure it on a replica before creating it.",
+			})
+			continue
+		}
 		if err != nil {
 			o.Log.Error("index experiment failed", "ddl", f.SuggestedIndex, "err", err)
 			out = append(out, IndexExperiment{

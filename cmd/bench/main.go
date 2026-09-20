@@ -27,6 +27,7 @@ import (
 	"github.com/Anwesha33/queryforge/internal/engine"
 	"github.com/Anwesha33/queryforge/internal/llm"
 	"github.com/Anwesha33/queryforge/internal/optimizer"
+	"github.com/Anwesha33/queryforge/internal/sqlparse"
 )
 
 type expectation struct {
@@ -123,7 +124,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	eng, err := engine.NewPostgres(ctx, cfg.TargetDSN, engine.Timings{
+	eng, err := engine.Open(ctx, cfg.TargetDSN, cfg.TargetDialect, engine.Timings{
 		StatementTimeout: cfg.QueryTimeout, Runs: cfg.MeasurementRuns, WarmupRuns: cfg.WarmupRuns,
 	})
 	if err != nil {
@@ -135,7 +136,7 @@ func main() {
 	useLLM := model.Enabled() && !*skipLLM
 
 	opt := &optimizer.Optimizer{
-		Engine: eng, LLM: model,
+		Engine: eng, LLM: model, Dialect: sqlparse.Dialect(eng.Dialect()),
 		Opts: optimizer.Options{
 			MaxCandidates: cfg.MaxCandidates, MinImprovementPct: cfg.MinImprovementPct,
 			Runs: cfg.MeasurementRuns, TestIndexes: cfg.TestIndexes && !*skipIndexes,

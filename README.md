@@ -140,11 +140,49 @@ PostgreSQL has transactional DDL, so the index is real for the duration of the
 measurement and gone afterwards. Measured gains on the benchmark ranged from 99%
 down to 14%, and five candidates were measured and *not* recommended.
 
-This is also why the service targets PostgreSQL and not MySQL: MySQL commits DDL
-implicitly, so the same experiment would leave a real index behind on someone
-else's database. Supporting it needs a different strategy — a shadow schema, or
-accepting cost-model estimates instead of measurements — and doing it properly
-is a larger piece of work than pretending the interface is enough.
+This is also the one thing MySQL cannot do — see below.
+
+## MySQL
+
+MySQL is supported for everything except index experiments.
+
+```bash
+docker compose -f deploy/docker-compose.yml --profile mysql up -d mysql
+TARGET_DSN='queryforge:queryforge@tcp(127.0.0.1:3307)/shop' make optimize \
+  SQL="SELECT id, status FROM orders WHERE DATE(created_at) = DATE(NOW() - INTERVAL 30 DAY)"
+```
+
+The dialect is inferred from `TARGET_DSN`; set `TARGET_DIALECT` only if the DSN
+shape is ambiguous.
+
+| Capability | PostgreSQL | MySQL |
+| --- | --- | --- |
+| Read-only parsing and safety gates | yes | yes (TiDB's MySQL grammar) |
+| Schema introspection, plans, timing | yes | yes |
+| Result-checksum equivalence gate | yes | yes |
+| Rewrite verification and acceptance | yes | yes |
+| Predicate-level rules | yes | **no** — reported in `limitations` |
+| Index experiments | yes | **no** — candidates reported unmeasured |
+
+**Why index experiments do not run on MySQL.** Postgres has transactional DDL,
+so an index can be built, measured and rolled back. MySQL commits DDL
+implicitly, so the same experiment leaves a real index on someone else's
+database. Rather than fall back to the planner's cost estimate — putting a guess
+where this service promises a measurement — a candidate index is reported and
+explicitly **not recommended**, with the reason stated in the report.
+
+**Why some rules do not run.** Most rules walk a libpg_query parse tree, and a
+MySQL statement carries a TiDB one. Those rules are skipped explicitly and named
+in the report's `limitations` field, because an empty findings list that silently
+means "could not look" is indistinguishable from one that means "nothing wrong".
+
+Three MySQL-specific correctness details are handled in the engine and worth
+knowing about: `GROUP_CONCAT` silently truncates at `group_concat_max_len`
+(1024 bytes by default), which would make two different result sets hash the
+same; `CONCAT_WS` skips NULLs, which would make `('x',NULL)` and `(NULL,'x')`
+collide; and timing is wall-clock around a drained result set, because MySQL has
+no machine-readable server-side execution time. `docs/ARCHITECTURE.md` explains
+each.
 
 ## API
 

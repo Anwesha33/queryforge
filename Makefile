@@ -62,3 +62,16 @@ bench: ## Score the optimizer against the benchmark queries
 .PHONY: bench-rules
 bench-rules: ## Benchmark with rule-derived candidates only (no LLM, no API key needed)
 	go run ./cmd/bench -skip-llm -out testdata/bench-report-rules.json
+
+.PHONY: mysql-up
+mysql-up: ## Start the MySQL benchmark database (opt-in profile)
+	$(COMPOSE) --profile mysql up -d mysql
+	@echo "seeding 3.8M rows — watch with: docker logs -f queryforge-mysql-1"
+
+.PHONY: mysql-down
+mysql-down: ## Stop MySQL and delete its volume
+	$(COMPOSE) --profile mysql down -v
+
+.PHONY: test-mysql
+test-mysql: ## Run the MySQL integration tests against a running mysql-up
+	MYSQL_TEST_DSN='queryforge:queryforge@tcp(127.0.0.1:3307)/shop' go test ./... -count=1

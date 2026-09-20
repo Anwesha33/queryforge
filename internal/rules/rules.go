@@ -78,18 +78,41 @@ type Predicate struct {
 type Analysis struct {
 	Findings   []Finding   `json:"findings"`
 	Predicates []Predicate `json:"predicates"`
+	// Limitations names analyses that could not run against this statement.
+	//
+	// It exists because the alternative is a silent partial result. Most rules
+	// here walk a libpg_query parse tree; a MySQL statement carries a TiDB tree
+	// instead, so those rules find nothing — which is indistinguishable, in the
+	// report, from a query with nothing wrong with it. Saying so turns a silent
+	// gap into a stated one.
+	Limitations []string `json:"limitations,omitempty"`
 }
 
 // Analyze runs every rule.
 func Analyze(st *sqlparse.Statement, schema *engine.Schema, plan *engine.Measurement) *Analysis {
 	a := &Analysis{}
-	a.Predicates = resolveTables(extractPredicates(st), st, schema)
 
-	a.checkSargability(st, schema)
+	// The tree-walking rules are written against libpg_query's node types. On
+	// any other dialect they would return nothing at all, so they are skipped
+	// explicitly and the gap is recorded rather than left to look like a clean
+	// bill of health. The rules that read dialect-neutral facts off the
+	// Statement — SELECT *, LIMIT without ORDER BY — still run, as do the ones
+	// that read the schema and the executed plan.
+	treeRules := st != nil && st.Dialect != sqlparse.DialectMySQL
+
+	if treeRules {
+		a.Predicates = resolveTables(extractPredicates(st), st, schema)
+		a.checkSargability(st, schema)
+		a.checkLeadingWildcard(st)
+		a.checkNotIn(st)
+	} else {
+		a.Limitations = append(a.Limitations,
+			"predicate-level rules (non-sargable predicates, leading-wildcard LIKE, NOT IN subqueries) "+
+				"are implemented against the PostgreSQL parse tree and did not run for this dialect")
+	}
+
 	a.checkSelectStar(st, schema)
-	a.checkLeadingWildcard(st)
 	a.checkLimitWithoutOrder(st)
-	a.checkNotIn(st)
 	a.checkMissingIndexes(schema)
 	if plan != nil {
 		a.checkPlan(plan, schema)
