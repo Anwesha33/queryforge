@@ -86,7 +86,8 @@ func main() {
 			MaxIndexTests:     cfg.MaxIndexTests,
 			SkipLLM:           !model.Enabled(),
 		},
-		Log: slogAdapter{log},
+		Log:     slogAdapter{log},
+		Dialect: sqlparse.Dialect(target.Dialect()),
 	}
 
 	w := &worker{cfg: cfg, store: st, producer: producer, opt: opt, log: log}
@@ -242,7 +243,7 @@ func (w *worker) recordRuns(ctx context.Context, job *store.Job, report *optimiz
 			continue
 		}
 		fp := ""
-		if st, err := sqlparse.Parse(c.Candidate.SQL); err == nil {
+		if st, err := sqlparse.ParseDialect(c.Candidate.SQL, w.opt.Dialect); err == nil {
 			fp = st.Fingerprint
 		}
 		_ = w.store.RecordRun(ctx, store.Run{
@@ -322,7 +323,7 @@ func openStoreWithRetry(ctx context.Context, dsn string, log *slog.Logger) (*sto
 	return nil, lastErr
 }
 
-func openTargetWithRetry(ctx context.Context, cfg *config.Config, log *slog.Logger) (*engine.Postgres, error) {
+func openTargetWithRetry(ctx context.Context, cfg *config.Config, log *slog.Logger) (engine.Engine, error) {
 	timings := engine.Timings{
 		StatementTimeout: cfg.QueryTimeout,
 		Runs:             cfg.MeasurementRuns,
@@ -330,7 +331,7 @@ func openTargetWithRetry(ctx context.Context, cfg *config.Config, log *slog.Logg
 	}
 	var lastErr error
 	for attempt := 0; attempt < 30; attempt++ {
-		eng, err := engine.NewPostgres(ctx, cfg.TargetDSN, timings)
+		eng, err := engine.Open(ctx, cfg.TargetDSN, cfg.TargetDialect, timings)
 		if err == nil {
 			return eng, nil
 		}

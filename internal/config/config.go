@@ -37,9 +37,12 @@ type Config struct {
 	MeasurementRuns   int
 	WarmupRuns        int
 	MinImprovementPct float64
-	MaxCandidates     int
-	MaxIndexTests     int
-	TestIndexes       bool
+	// TargetDialect is "postgres" or "mysql". Empty means infer from TargetDSN.
+	TargetDialect string
+
+	MaxCandidates int
+	MaxIndexTests int
+	TestIndexes   bool
 
 	WorkerConcurrency  int
 	JobTimeout         time.Duration
@@ -51,6 +54,9 @@ func Load() (*Config, error) {
 		HTTPAddr:    env("HTTP_ADDR", ":8082"),
 		MetadataDSN: env("METADATA_DSN", "postgres://queryforge:queryforge@localhost:5434/queryforge?sslmode=disable"),
 		TargetDSN:   env("TARGET_DSN", "postgres://queryforge:queryforge@localhost:5434/shop?sslmode=disable"),
+		// Normally inferred from TARGET_DSN; set explicitly only when the DSN
+		// shape is ambiguous.
+		TargetDialect: env("TARGET_DIALECT", ""),
 
 		RedisAddr:     env("REDIS_ADDR", "localhost:6381"),
 		RedisPassword: env("REDIS_PASSWORD", ""),

@@ -133,12 +133,83 @@ advice would have recommended all nine.
 The rollback is unconditional, including on the success path. The index must not
 survive the experiment, and a `defer` that only fires on error is how it would.
 
-**This is why the service targets PostgreSQL rather than MySQL.** MySQL commits
-DDL implicitly; the same experiment there leaves a real index on someone else's
-database. Supporting it properly needs a shadow schema, or accepting cost-model
-estimates instead of measurements. The `engine.Engine` interface marks where
-that implementation would go, and the README says plainly that it does not exist
-rather than shipping a stub that appears to work.
+**This is why index experiments are PostgreSQL-only.** MySQL commits DDL
+implicitly; the same experiment there leaves a real index on someone else's
+database. See "MySQL" below for what the MySQL engine does instead, which is to
+report the candidate and say plainly that it was not measured.
+
+## MySQL
+
+MySQL is supported for everything except index experiments. The split is not
+arbitrary — it falls exactly where the evidence runs out.
+
+**What works, and works the same way.** Parsing, the read-only safety gates,
+schema introspection, plans, timing, result checksums, and the whole
+verification loop. A rewrite proposed against MySQL is executed alongside the
+original, hashed, compared and timed under the same two bars as on Postgres. The
+thing this project is actually about — never showing a human a rewrite that has
+not been proven — is dialect-independent.
+
+**The parser is a different parser.** `internal/sqlparse` uses libpg_query for
+Postgres and TiDB's parser for MySQL, for the same reason it uses a real parser
+at all: every safety decision is a question about the *structure* of a
+statement, and a dialect-mismatched grammar answers those wrongly on exactly the
+inputs that matter. libpg_query rejects backtick identifiers, `LIMIT 10, 20` and
+index hints — all valid MySQL. One genuine dialect difference is worth
+recording: MySQL's CTEs cannot contain DML, so the
+`WITH gone AS (DELETE ... RETURNING *) SELECT *` attack that Postgres permits has
+no MySQL equivalent. The check is structural on both sides; on MySQL the grammar
+simply refuses to produce that tree.
+
+**Timing means something slightly different.** MySQL has no
+`EXPLAIN (ANALYZE, BUFFERS)` reporting server-side execution time in a
+machine-readable form, so the MySQL engine times the client-visible round trip
+with the result set fully drained. Draining matters — MySQL streams rows, so
+stopping at the first one times the planner rather than the query. Client and
+network time are inside the number, which makes the absolute figure not directly
+comparable to a Postgres one; it is consistent between baseline and candidate,
+so the *comparison* that decides acceptance is unaffected.
+
+**The checksum has three traps that Postgres does not have**, and each is a way
+to get a wrong answer rather than an error:
+
+1. There is no row-to-text cast, so the row hash is built from an explicit
+   column list obtained by running the query with `LIMIT 0`.
+2. `CONCAT_WS` skips NULL arguments, which would make `('x', NULL)` and
+   `(NULL, 'x')` hash identically. Every column is wrapped in a `COALESCE` to a
+   sentinel no value can produce.
+3. `GROUP_CONCAT` truncates at `group_concat_max_len` — **1024 bytes by
+   default** — and returns the shorter string silently, which would make two
+   different result sets hash the same. The limit is raised, and the connection
+   is then asked whether it truncated anyway; warning 1260 is treated as a hard
+   error rather than as a hash.
+
+**Index experiments do not run.** `WithHypotheticalIndex` returns
+`ErrNoHypotheticalIndexes`, and the optimizer treats that as a capability
+statement rather than a failure: the candidate index appears in the report,
+marked **not recommended**, with the reason stated — "candidate identified but
+NOT measured". Recommending an index this service has not timed would be exactly
+the guess the verification loop exists to avoid, and falling back to the
+planner's cost estimate would put an estimate where the report promises a
+measurement. On the Postgres benchmark this machinery rejected five of nine
+candidates; on MySQL there is nothing to reject *with*, and saying so is the
+honest output.
+
+**The rule engine is partially available, and says so.** Most rules walk a
+libpg_query parse tree, so they cannot run against a TiDB one. Rather than
+returning an empty findings list that reads like a clean bill of health, the
+rules that cannot run are skipped explicitly and named in the report's
+`limitations` field. The rules that read dialect-neutral facts — `SELECT *`,
+`LIMIT` without `ORDER BY` — and the ones that read the schema and the executed
+plan still run on both. Porting the predicate-level rules to the MySQL AST is
+the obvious next step and is real work, not a translation.
+
+**Statistics are thinner.** MySQL exposes no null fraction at all, and
+`n_distinct` only for indexed columns, derived from
+`information_schema.STATISTICS.CARDINALITY`. Both gaps are reported as zero, and
+zero must be read as "unknown" rather than "constant" — otherwise the engine
+would suppress an index suggestion on every unindexed column, which is precisely
+the set most likely to need one.
 
 ## Why the rules exist alongside the model
 

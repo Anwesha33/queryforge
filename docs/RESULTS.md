@@ -6,6 +6,21 @@ make bench         # rules + LLM
 make bench-rules   # rules only, no API key required
 ```
 
+## Scope
+
+**Every number in this document was measured against PostgreSQL.** MySQL is
+supported for everything except index experiments, and it has no benchmark of
+its own: the index-experiment column is the headline result here, and it is
+exactly the thing MySQL cannot do. The MySQL path is covered by integration
+tests against a live database rather than by a scored benchmark — see
+`internal/engine/mysql_integration_test.go` and
+`internal/optimizer/mysql_e2e_test.go`, run with `make mysql-up && make test-mysql`.
+
+Building a MySQL benchmark would mean porting the nine queries and re-measuring,
+and its results table would be missing the column that makes this one
+interesting. That is a fair description of the gap rather than a reason to
+publish an incomparable number.
+
 ## The benchmark
 
 A deliberately under-indexed PostgreSQL database — only primary keys exist —

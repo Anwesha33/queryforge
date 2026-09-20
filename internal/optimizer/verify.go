@@ -97,6 +97,9 @@ type Verifier struct {
 	// Runs is how many timed executions per query.
 	Runs int
 	Log  Logger
+	// Dialect selects the grammar used to parse candidate rewrites. It must
+	// match the engine's, or a valid MySQL candidate is rejected as unparseable.
+	Dialect sqlparse.Dialect
 }
 
 type Logger interface {
@@ -140,7 +143,7 @@ func (v *Verifier) Verify(ctx context.Context, base *Baseline, c Candidate) Resu
 	//    the server uses, so "read-only" here means the same thing it means
 	//    there — and a model asked for a SELECT has certainly been known to
 	//    return a DELETE.
-	candidateStmt, err := sqlparse.Parse(c.SQL)
+	candidateStmt, err := sqlparse.ParseDialect(c.SQL, v.Dialect)
 	if err != nil {
 		res.Verdict = VerdictRejected
 		res.Reason = ReasonUnparseable

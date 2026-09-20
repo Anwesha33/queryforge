@@ -13,11 +13,15 @@ import (
 
 // Engine is the seam between the optimizer and a specific database.
 //
-// Only Postgres is implemented. The interface exists because the optimizer's
-// logic is dialect-independent, but the honest position is in docs: MySQL needs
-// a different strategy for index experiments because it has no transactional
-// DDL, so `CREATE INDEX ... ROLLBACK` — the trick that makes measuring a
-// hypothetical index safe here — simply does not work there.
+// Postgres and MySQL are both implemented. The optimizer's logic is
+// dialect-independent, which is why this interface can be narrow.
+//
+// One capability is not universal: WithHypotheticalIndex needs transactional
+// DDL. Postgres has it, so an index can be built, measured and rolled back.
+// MySQL commits DDL implicitly, so its implementation returns
+// ErrNoHypotheticalIndexes and the optimizer reports the candidate as
+// identified-but-unmeasured rather than substituting the planner's cost
+// estimate for a measurement.
 type Engine interface {
 	Introspect(ctx context.Context, tables []string) (*Schema, error)
 	Explain(ctx context.Context, sql string) (*Plan, error)

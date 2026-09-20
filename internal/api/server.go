@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Anwesha33/queryforge/internal/config"
+	"github.com/Anwesha33/queryforge/internal/engine"
 	"github.com/Anwesha33/queryforge/internal/queue"
 	"github.com/Anwesha33/queryforge/internal/sqlparse"
 	"github.com/Anwesha33/queryforge/internal/store"
@@ -37,6 +38,18 @@ type Server struct {
 
 func NewServer(cfg *config.Config, st *store.Store, p *queue.Producer, log *slog.Logger) *Server {
 	return &Server{cfg: cfg, store: st, producer: p, log: log, started: time.Now()}
+}
+
+// dialect is the grammar the target database speaks. Parsing at the edge with
+// the wrong one would reject valid statements before they ever reach a worker.
+func (s *Server) dialect() sqlparse.Dialect {
+	if s.cfg.TargetDialect != "" {
+		return sqlparse.Dialect(s.cfg.TargetDialect)
+	}
+	if d, err := engine.DialectForDSN(s.cfg.TargetDSN); err == nil {
+		return sqlparse.Dialect(d)
+	}
+	return sqlparse.DialectPostgres
 }
 
 func (s *Server) Routes() http.Handler {
@@ -73,7 +86,7 @@ func (s *Server) createOptimization(w http.ResponseWriter, r *http.Request) {
 
 	// Parse before accepting. A statement that can write is refused here, with
 	// a reason, rather than being queued and failing out of sight.
-	st, err := sqlparse.Parse(req.SQL)
+	st, err := sqlparse.ParseDialect(req.SQL, s.dialect())
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, sqlparse.ErrNotReadOnly) {
@@ -133,7 +146,7 @@ func (s *Server) analyzeOnly(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "malformed JSON body")
 		return
 	}
-	st, err := sqlparse.Parse(req.SQL)
+	st, err := sqlparse.ParseDialect(req.SQL, s.dialect())
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, sqlparse.ErrNotReadOnly) {
@@ -195,7 +208,7 @@ func (s *Server) listOptimizations(w http.ResponseWriter, r *http.Request) {
 func (s *Server) history(w http.ResponseWriter, r *http.Request) {
 	fingerprint := r.URL.Query().Get("fingerprint")
 	if sql := r.URL.Query().Get("sql"); sql != "" {
-		st, err := sqlparse.Parse(sql)
+		st, err := sqlparse.ParseDialect(sql, s.dialect())
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return

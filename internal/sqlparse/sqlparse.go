@@ -20,9 +20,22 @@ import (
 	pg "github.com/pganalyze/pg_query_go/v6"
 )
 
+// Dialect names the SQL grammar a statement was parsed with. It matters
+// because the parse tree, and therefore what the rule engine can inspect, is
+// dialect-specific: the Postgres path carries a libpg_query tree, the MySQL
+// path a TiDB one.
+type Dialect string
+
+const (
+	DialectPostgres Dialect = "postgres"
+	DialectMySQL    Dialect = "mysql"
+)
+
 // Statement is a parsed SQL statement plus the facts the optimizer needs.
 type Statement struct {
 	SQL string
+	// Dialect records which grammar parsed this statement.
+	Dialect Dialect
 	// Normalized replaces literals with placeholders, which is what makes two
 	// runs of "the same query" with different constants comparable.
 	Normalized string
@@ -113,6 +126,7 @@ func Parse(sql string) (*Statement, error) {
 		SQL:         trimmed,
 		Normalized:  normalized,
 		Fingerprint: fingerprint,
+		Dialect:     DialectPostgres,
 		tree:        tree,
 	}
 	st.CTENames = cteNames(sel)
@@ -353,5 +367,20 @@ func nodeKind(n *pg.Node) string {
 		return "VariableSetStmt"
 	default:
 		return "unsupported statement"
+	}
+}
+
+// ParseDialect parses a statement with the grammar of the given dialect.
+//
+// Parse remains the Postgres entry point so that existing callers, and the
+// rule engine which walks a libpg_query tree, are unaffected.
+func ParseDialect(sql string, d Dialect) (*Statement, error) {
+	switch d {
+	case DialectMySQL:
+		return ParseMySQL(sql)
+	case DialectPostgres, "":
+		return Parse(sql)
+	default:
+		return nil, fmt.Errorf("unknown dialect %q", d)
 	}
 }

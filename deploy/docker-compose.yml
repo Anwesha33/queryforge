@@ -42,6 +42,35 @@ services:
       timeout: 3s
       retries: 30
 
+  # MySQL is opt-in: `docker compose --profile mysql up -d mysql`.
+  #
+  # It is not in the default stack because the Postgres path is the one that can
+  # *measure* an index experiment, and starting a second 1.5M-row database by
+  # default would double the seed time for a demo that does not need it.
+  mysql:
+    profiles: ["mysql"]
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: queryforge
+      MYSQL_DATABASE: shop
+      MYSQL_USER: queryforge
+      MYSQL_PASSWORD: queryforge
+    command:
+      - --innodb-buffer-pool-size=512M
+      # The benchmark is about plan quality. Left at the defaults, every query is
+      # dominated by I/O and the differences between plans vanish into noise —
+      # the same reasoning as the Postgres service above.
+      - --performance-schema=ON
+    ports: ["3307:3306"]
+    volumes:
+      - mysqldata:/var/lib/mysql
+      - ../testdata/schema/seed-mysql.sql:/docker-entrypoint-initdb.d/10-seed.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uqueryforge", "-pqueryforge"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
@@ -113,3 +142,4 @@ services:
 
 volumes:
   pgdata:
+  mysqldata:
