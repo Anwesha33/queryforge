@@ -201,4 +201,3 @@ docs/              Architecture, results, interview guide
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — why each piece is shaped this way
 - [docs/RESULTS.md](docs/RESULTS.md) — the benchmark, in full, with its limits
-- [docs/INTERVIEW-GUIDE.md](docs/INTERVIEW-GUIDE.md) — decisions, trade-offs, bugs found while building it
